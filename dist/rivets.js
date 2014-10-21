@@ -117,6 +117,49 @@
 
   })();
 
+  Rivets.ArgumentParser = (function() {
+    function ArgumentParser() {}
+
+    ArgumentParser.types = {
+      primitive: 0,
+      keypath: 1
+    };
+
+    ArgumentParser.parse = function(args) {
+      var arg, tokens, _i, _len;
+      tokens = [];
+      for (_i = 0, _len = args.length; _i < _len; _i++) {
+        arg = args[_i];
+        tokens.push(/^'.*'$/.test(arg) ? {
+          type: this.types.primitive,
+          value: arg.slice(1, -1)
+        } : arg === 'true' ? {
+          type: this.types.primitive,
+          value: true
+        } : arg === 'false' ? {
+          type: this.types.primitive,
+          value: false
+        } : arg === 'null' ? {
+          type: this.types.primitive,
+          value: null
+        } : arg === 'undefined' ? {
+          type: this.types.primitive,
+          value: void 0
+        } : isNaN(Number(arg)) === false ? {
+          type: this.types.primitive,
+          value: Number(arg)
+        } : {
+          type: this.types.keypath,
+          value: arg
+        });
+      }
+      return tokens;
+    };
+
+    return ArgumentParser;
+
+  })();
+
   Rivets.TextTemplateParser = (function() {
     function TextTemplateParser() {}
 
@@ -597,6 +640,7 @@
       this.setBinder = __bind(this.setBinder, this);
       this.formatters = this.options.formatters || [];
       this.dependencies = [];
+      this.formatterObservers = {};
       this.model = void 0;
       this.setBinder();
     }
@@ -626,17 +670,23 @@
     };
 
     Binding.prototype.formattedValue = function(value) {
-      var args, formatter, id, _i, _len, _ref1;
+      var ai, arg, args, fi, formatter, id, observer, processedArgs, _base, _i, _j, _len, _len1, _ref1;
       _ref1 = this.formatters;
-      for (_i = 0, _len = _ref1.length; _i < _len; _i++) {
-        formatter = _ref1[_i];
-        args = formatter.split(/\s+/);
+      for (fi = _i = 0, _len = _ref1.length; _i < _len; fi = ++_i) {
+        formatter = _ref1[fi];
+        args = formatter.match(/[^\s']+|'[^']+'/g);
         id = args.shift();
         formatter = this.view.formatters[id];
+        args = Rivets.ArgumentParser.parse(args);
+        processedArgs = [];
+        for (ai = _j = 0, _len1 = args.length; _j < _len1; ai = ++_j) {
+          arg = args[ai];
+          processedArgs.push(arg.type === 0 ? arg.value : ((_base = this.formatterObservers)[fi] || (_base[fi] = {}), !(observer = this.formatterObservers[fi][ai]) ? (observer = new Rivets.Observer(this.view, this.view.models, arg.value, this.sync), this.formatterObservers[fi][ai] = observer) : void 0, observer.value()));
+        }
         if ((formatter != null ? formatter.read : void 0) instanceof Function) {
-          value = formatter.read.apply(formatter, [value].concat(__slice.call(args)));
+          value = formatter.read.apply(formatter, [value].concat(__slice.call(processedArgs)));
         } else if (formatter instanceof Function) {
-          value = formatter.apply(null, [value].concat(__slice.call(args)));
+          value = formatter.apply(null, [value].concat(__slice.call(processedArgs)));
         }
       }
       return value;
@@ -713,7 +763,7 @@
     };
 
     Binding.prototype.unbind = function() {
-      var observer, _i, _len, _ref1, _ref2;
+      var ai, args, fi, observer, _i, _len, _ref1, _ref2, _ref3;
       if ((_ref1 = this.binder.unbind) != null) {
         _ref1.call(this, this.el);
       }
@@ -723,7 +773,16 @@
         observer = _ref2[_i];
         observer.unobserve();
       }
-      return this.dependencies = [];
+      this.dependencies = [];
+      _ref3 = this.formatterObservers;
+      for (fi in _ref3) {
+        args = _ref3[fi];
+        for (ai in args) {
+          observer = args[ai];
+          observer.unobserve();
+        }
+      }
+      return this.formatterObservers = {};
     };
 
     Binding.prototype.update = function(models) {
@@ -832,6 +891,7 @@
       this.sync = __bind(this.sync, this);
       this.formatters = this.options.formatters || [];
       this.dependencies = [];
+      this.formatterObservers = {};
     }
 
     TextBinding.prototype.binder = {
