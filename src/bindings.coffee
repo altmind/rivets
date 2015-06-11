@@ -128,6 +128,8 @@ class Rivets.Binding
         observer = @observe @model, dependency, @sync
         @dependencies.push observer
 
+    @el.dispatchEvent(new Event('rv-bound', { bubbles: true }));
+    
     @sync() if @view.preloadData
 
   # Unsubscribes from the model and the element.
